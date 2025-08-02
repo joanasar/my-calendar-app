@@ -1,5 +1,3 @@
-
-// components/CalendarWithWeeks.tsx
 import React, { useEffect, useState } from 'react';
 import {
   StyleSheet,
@@ -8,12 +6,12 @@ import {
   View,
   Platform,
   Modal,
-  Button,
 } from 'react-native';
 import { Calendar, LocaleConfig, DateData } from 'react-native-calendars';
-import WorkingHoursModal from './WorkingHoursModal'; // Adjust path as needed
+import WorkingHoursModal from './WorkingHoursModal';
+import WeeklySummaryPanel from './WeeklySummaryPanel';
 
-// Error Boundary Component (kept from your existing code)
+// Error Boundary Component
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -103,29 +101,40 @@ interface WorkingHours {
   end: string;
 }
 
+interface WeeklySummary {
+  weekNumber: number;
+  totalHours: number;
+  overtimeHours: number;
+  dates: string[];
+  month: number;
+  year: number;
+}
+
 const defaultWorkingHours: WorkingHours = { start: '', end: '' };
 
 const CalendarWithWeeks = () => {
-  // Step 2: working hours state per date
   const [workingHoursByDate, setWorkingHoursByDate] = useState<{
     [date: string]: WorkingHours;
   }>({});
-
-  // Selected date and modal state (Step 3)
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [currentWeek, setCurrentWeek] = useState<number>(1);
+  const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth() + 1);
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
+  const [weeklySummaries, setWeeklySummaries] = useState<WeeklySummary[]>([]);
 
   // Current date info helper
   const getCurrentDate = () => {
     const date = new Date();
     return {
       year: date.getFullYear(),
+      month: date.getMonth() + 1,
       dateString: date.toISOString().split('T')[0],
     };
   };
   const currentDate = getCurrentDate();
 
-  // Step 4: Week number calculation (ISO)
+  // Week number calculation (ISO)
   const getISOWeekNumber = (date: Date): number => {
     const tempDate = new Date(date);
     tempDate.setHours(0, 0, 0, 0);
@@ -144,7 +153,7 @@ const CalendarWithWeeks = () => {
     );
   };
 
-  // Step 4: Generate week number markings for the year
+  // Generate week number markings for the year
   const generateWeekNumbers = () => {
     const marked: { [date: string]: MarkedDate } = {};
     let date = new Date(currentDate.year, 0, 1);
@@ -179,6 +188,47 @@ const CalendarWithWeeks = () => {
     return marked;
   };
 
+  // Calculate weekly summaries
+  const calculateWeeklySummaries = (): WeeklySummary[] => {
+    const summaries: { [weekNumber: number]: WeeklySummary } = {};
+
+    Object.entries(workingHoursByDate).forEach(([dateStr, hours]) => {
+      if (hours.start && hours.end) {
+        const date = new Date(dateStr);
+        const weekNumber = getISOWeekNumber(date);
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+        
+        // Calculate hours worked
+        const [startHour, startMinute] = hours.start.split(':').map(Number);
+        const [endHour, endMinute] = hours.end.split(':').map(Number);
+        const totalMinutes = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
+        const hoursWorked = totalMinutes / 60;
+
+        if (!summaries[weekNumber]) {
+          summaries[weekNumber] = {
+            weekNumber,
+            totalHours: 0,
+            overtimeHours: 0,
+            dates: [],
+            month,
+            year
+          };
+        }
+
+        summaries[weekNumber].totalHours += hoursWorked;
+        summaries[weekNumber].dates.push(dateStr);
+      }
+    });
+
+    // Calculate overtime
+    Object.values(summaries).forEach(summary => {
+      summary.overtimeHours = Math.max(0, summary.totalHours - 30);
+    });
+
+    return Object.values(summaries).sort((a, b) => a.weekNumber - b.weekNumber);
+  };
+
   // Combine week number markings + working hours markings
   const buildMarkedDates = () => {
     const weeks = generateWeekNumbers();
@@ -190,11 +240,11 @@ const CalendarWithWeeks = () => {
         ...(combined[dateStr] || {}),
         customStyles: {
           container: {
-            backgroundColor: '#d1e7dd', // Light green background for working hours
+            backgroundColor: '#d1e7dd',
             borderRadius: 20,
           },
           text: {
-            color: '#0f5132', // Dark green text
+            color: '#0f5132',
             fontWeight: 'bold',
           },
         },
@@ -204,18 +254,18 @@ const CalendarWithWeeks = () => {
     return combined;
   };
 
-  // State to hold marked dates object for calendar
   const [markedDates, setMarkedDates] = useState<{ [date: string]: MarkedDate }>(
     {}
   );
 
-  // Update markings when working hours change
+  // Update markings and summaries when working hours change
   useEffect(() => {
     const marked = buildMarkedDates();
     setMarkedDates(marked);
+    setWeeklySummaries(calculateWeeklySummaries());
   }, [workingHoursByDate]);
 
-  // Step 3: onDayPress handler to open modal
+  // Day press handler
   const handleDayPress = (day: { dateString: string }) => {
     setSelectedDate(day.dateString);
     setIsModalVisible(true);
@@ -249,13 +299,24 @@ const CalendarWithWeeks = () => {
     setIsModalVisible(false);
   };
 
-  // Custom day component to support styles and onPress
+  // Render week number for the first day of each week
+  const renderWeekNumber = (weekNumber: number) => {
+    return (
+      <View style={styles.weekNumberContainer}>
+        <Text style={styles.weekNumberText}>{weekNumber}</Text>
+      </View>
+    );
+  };
+
+  // Custom day component
   const DayComponent = ({
     date,
     state,
+    marking,
   }: {
     date?: DateData;
     state?: string;
+    marking?: MarkedDate;
   }) => {
     if (!date) {
       return (
@@ -269,55 +330,35 @@ const CalendarWithWeeks = () => {
     const customStyles = markedDates[dateStr]?.customStyles || {};
     const isToday = dateStr === currentDate.dateString;
     const isDisabled = state === 'disabled';
+    const weekNumber = marking?.weekNumber;
+    const dateObj = new Date(dateStr);
+    const isFirstDayOfWeek = dateObj.getDay() === 1; // Monday is day 1 (firstDay=1)
 
     return (
-      <TouchableOpacity
-        style={[styles.dayContainer, customStyles.container, isDisabled && styles.disabledDay]}
-        onPress={() => {
-          if (!isDisabled) {
-            handleDayPress({ dateString: dateStr });
-          }
-        }}
-        disabled={isDisabled}
-      >
-        <Text
-          style={[
-            styles.dayText,
-            customStyles.text,
-            isToday ? styles.todayText : null,
-            isDisabled ? styles.disabledText : null,
-          ]}
+      <View style={styles.dayWrapper}>
+        {isFirstDayOfWeek && renderWeekNumber(weekNumber || getISOWeekNumber(dateObj))}
+        <TouchableOpacity
+          style={[styles.dayContainer, customStyles.container, isDisabled && styles.disabledDay]}
+          onPress={() => {
+            if (!isDisabled) {
+              handleDayPress({ dateString: dateStr });
+            }
+          }}
+          disabled={isDisabled}
         >
-          {date.day}
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.dayText,
+              customStyles.text,
+              isToday ? styles.todayText : null,
+              isDisabled ? styles.disabledText : null,
+            ]}
+          >
+            {date.day}
+          </Text>
+        </TouchableOpacity>
+      </View>
     );
-  };
-
-  // Render header showing the week number for current month view
-  const renderHeader = (date: { year?: number; month?: number; day?: number }) => {
-    try {
-      const year = date?.year ?? new Date().getFullYear();
-      const month = date?.month ?? new Date().getMonth() + 1;
-      const day = date?.day ?? new Date().getDate();
-
-      const dateStr = `${year}-${month.toString().padStart(2, '0')}-${day
-        .toString()
-        .padStart(2, '0')}`;
-      const weekNumber = markedDates[dateStr]?.weekNumber ?? 1;
-
-      return (
-        <View style={styles.weekHeader}>
-          <Text style={styles.weekNumberText}>Week {weekNumber}</Text>
-        </View>
-      );
-    } catch (error) {
-      return (
-        <View style={styles.weekHeader}>
-          <Text style={styles.weekNumberText}>Week -</Text>
-        </View>
-      );
-    }
   };
 
   return (
@@ -327,11 +368,14 @@ const CalendarWithWeeks = () => {
           current={currentDate.dateString}
           markedDates={markedDates}
           dayComponent={DayComponent}
-          renderHeader={renderHeader}
           firstDay={1}
           hideExtraDays={false}
           markingType={'custom'}
           onDayPress={handleDayPress}
+          onMonthChange={(date) => {
+            setCurrentMonth(date.month);
+            setCurrentYear(date.year);
+          }}
           theme={{
             backgroundColor: '#fff',
             calendarBackground: '#fff',
@@ -358,6 +402,13 @@ const CalendarWithWeeks = () => {
           }}
         />
 
+        <WeeklySummaryPanel 
+          summaries={weeklySummaries}
+          currentWeek={currentWeek}
+          currentMonth={currentMonth}
+          currentYear={currentYear}
+        />
+
         {/* Working Hours Modal */}
         {selectedDate && (
           <WorkingHoursModal
@@ -375,7 +426,24 @@ const CalendarWithWeeks = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { 
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  dayWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  weekNumberContainer: {
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekNumberText: {
+    fontSize: 12,
+    color: '#1a73e8',
+    fontWeight: 'bold',
+  },
   dayContainer: {
     width: 32,
     height: 32,
@@ -395,15 +463,6 @@ const styles = StyleSheet.create({
   todayText: {
     color: '#00adf5',
     fontWeight: 'bold',
-  },
-  weekHeader: {
-    padding: 8,
-    backgroundColor: '#f0f0f0',
-  },
-  weekNumberText: {
-    fontWeight: 'bold',
-    fontSize: 14,
-    color: '#333',
   },
   errorContainer: {
     flex: 1,
