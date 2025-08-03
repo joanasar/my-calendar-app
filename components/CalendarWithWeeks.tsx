@@ -10,6 +10,7 @@ import { Calendar, LocaleConfig, DateData } from 'react-native-calendars';
 import WorkingHoursModal from './WorkingHoursModal';
 import WeeklySummaryPanel from './WeeklySummaryPanel';
 import TeamMeetings from './TeamMeetings';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -133,6 +134,38 @@ const CalendarWithWeeks = () => {
   const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth() + 1);
   const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
   const [weeklySummaries, setWeeklySummaries] = useState<WeeklySummary[]>([]);
+
+  // Load saved data when component mounts
+  useEffect(() => {
+    const loadSavedData = async () => {
+      try {
+        const savedData = await AsyncStorage.getItem('workingHoursData');
+        if (savedData) {
+          setWorkingHoursByDate(JSON.parse(savedData));
+        }
+      } catch (error) {
+        console.error('Failed to load data', error);
+      }
+    };
+    
+    loadSavedData();
+  }, []);
+
+  // Save data whenever it changes
+  useEffect(() => {
+    const saveData = async () => {
+      try {
+        await AsyncStorage.setItem(
+          'workingHoursData',
+          JSON.stringify(workingHoursByDate)
+        );
+      } catch (error) {
+        console.error('Failed to save data', error);
+      }
+    };
+    
+    saveData();
+  }, [workingHoursByDate]);
 
   // Current date info helper
   const getCurrentDate = () => {
