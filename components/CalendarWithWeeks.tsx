@@ -5,11 +5,11 @@ import {
   TouchableOpacity,
   View,
   Platform,
-  Modal,
 } from 'react-native';
 import { Calendar, LocaleConfig, DateData } from 'react-native-calendars';
 import WorkingHoursModal from './WorkingHoursModal';
 import WeeklySummaryPanel from './WeeklySummaryPanel';
+import TeamMeetings from './TeamMeetings';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component<
@@ -111,6 +111,17 @@ interface WeeklySummary {
 }
 
 const defaultWorkingHours: WorkingHours = { start: '', end: '' };
+
+// Custom Header Component
+const CustomHeader = ({ month, year }: { month: string; year: number }) => {
+  return (
+    <View style={styles.headerContainer}>
+      <Text style={styles.headerText}>
+        {month} {year}
+      </Text>
+    </View>
+  );
+};
 
 const CalendarWithWeeks = () => {
   const [workingHoursByDate, setWorkingHoursByDate] = useState<{
@@ -254,9 +265,7 @@ const CalendarWithWeeks = () => {
     return combined;
   };
 
-  const [markedDates, setMarkedDates] = useState<{ [date: string]: MarkedDate }>(
-    {}
-  );
+  const [markedDates, setMarkedDates] = useState<{ [date: string]: MarkedDate }>({});
 
   // Update markings and summaries when working hours change
   useEffect(() => {
@@ -308,6 +317,11 @@ const CalendarWithWeeks = () => {
     );
   };
 
+  // Helper function to check if a day is weekend
+  const isWeekend = (dayOfWeek: number) => {
+    return dayOfWeek === 0 || dayOfWeek === 6; // 0 = Sunday, 6 = Saturday
+  };
+
   // Custom day component
   const DayComponent = ({
     date,
@@ -332,13 +346,20 @@ const CalendarWithWeeks = () => {
     const isDisabled = state === 'disabled';
     const weekNumber = marking?.weekNumber;
     const dateObj = new Date(dateStr);
+    const dayOfWeek = dateObj.getDay();
+    const isWeekendDay = isWeekend(dayOfWeek);
     const isFirstDayOfWeek = dateObj.getDay() === 1; // Monday is day 1 (firstDay=1)
 
     return (
       <View style={styles.dayWrapper}>
         {isFirstDayOfWeek && renderWeekNumber(weekNumber || getISOWeekNumber(dateObj))}
         <TouchableOpacity
-          style={[styles.dayContainer, customStyles.container, isDisabled && styles.disabledDay]}
+          style={[
+            styles.dayContainer, 
+            customStyles.container, 
+            isDisabled && styles.disabledDay,
+            isWeekendDay && styles.weekendDay,
+          ]}
           onPress={() => {
             if (!isDisabled) {
               handleDayPress({ dateString: dateStr });
@@ -352,6 +373,7 @@ const CalendarWithWeeks = () => {
               customStyles.text,
               isToday ? styles.todayText : null,
               isDisabled ? styles.disabledText : null,
+              isWeekendDay ? styles.weekendText : null,
             ]}
           >
             {date.day}
@@ -376,6 +398,12 @@ const CalendarWithWeeks = () => {
             setCurrentMonth(date.month);
             setCurrentYear(date.year);
           }}
+          renderHeader={(date) => (
+            <CustomHeader 
+              month={date.toString('MMMM')} 
+              year={date.getFullYear()} 
+            />
+          )}
           theme={{
             backgroundColor: '#fff',
             calendarBackground: '#fff',
@@ -388,7 +416,7 @@ const CalendarWithWeeks = () => {
             dotColor: '#00adf5',
             selectedDotColor: '#ffffff',
             arrowColor: 'orange',
-            monthTextColor: 'blue',
+            monthTextColor: 'black',
             indicatorColor: 'blue',
             textDayFontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
             textMonthFontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
@@ -397,8 +425,22 @@ const CalendarWithWeeks = () => {
             textMonthFontWeight: 'bold',
             textDayHeaderFontWeight: '300',
             textDayFontSize: 16,
-            textMonthFontSize: 16,
+            textMonthFontSize: 20,
             textDayHeaderFontSize: 14,
+            // @ts-ignore - This is a valid property but not in the type definitions
+            'stylesheet.calendar.header': {
+              header: {
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                padding: 10,
+              },
+              monthText: {
+                fontSize: 20,
+                fontWeight: 'bold',
+                color: 'black',
+              },
+            },
           }}
         />
 
@@ -408,7 +450,10 @@ const CalendarWithWeeks = () => {
           currentMonth={currentMonth}
           currentYear={currentYear}
         />
-
+        <TeamMeetings 
+          currentMonth={currentMonth}
+          currentYear={currentYear}
+        />
         {/* Working Hours Modal */}
         {selectedDate && (
           <WorkingHoursModal
@@ -429,6 +474,16 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1,
     backgroundColor: '#fff',
+  },
+  headerContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  headerText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'black',
   },
   dayWrapper: {
     flexDirection: 'row',
@@ -463,6 +518,12 @@ const styles = StyleSheet.create({
   todayText: {
     color: '#00adf5',
     fontWeight: 'bold',
+  },
+  weekendDay: {
+    backgroundColor: '#f5f9ff', // Light blue background for weekends
+  },
+  weekendText: {
+    color: '#1a73e8', // Blue text for weekends
   },
   errorContainer: {
     flex: 1,
